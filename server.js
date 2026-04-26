@@ -6,6 +6,9 @@ const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "127.0.0.1";
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
 const BOLNA_AGENT_URL = process.env.BOLNA_AGENT_URL || "";
+const BOLNA_API_KEY = process.env.BOLNA_API_KEY || "";
+const BOLNA_AGENT_ID = process.env.BOLNA_AGENT_ID || "a707a917-3bae-4bd1-a710-70bd0e131af6";
+const BOLNA_FROM_PHONE_NUMBER = process.env.BOLNA_FROM_PHONE_NUMBER || "";
 const WEBHOOK_WHITELIST_IP = "13.203.39.153";
 
 app.use(express.json({ limit: "1mb" }));
@@ -25,6 +28,7 @@ const routingMap = {
 const state = {
   lastEvent: null,
   latestTicket: null,
+  latestCall: null,
   ticketRegistry: new Map(),
 };
 
@@ -53,6 +57,45 @@ function getWebhookUrl(req) {
   }
 
   return `${req.protocol}://${req.get("host")}/api/bolna/webhook`;
+}
+
+async function startBolnaCall({
+  recipientPhoneNumber,
+  employeeName,
+  department,
+  contact,
+}) {
+  const payload = {
+    agent_id: BOLNA_AGENT_ID,
+    recipient_phone_number: recipientPhoneNumber,
+    user_data: {
+      employee_name: employeeName || "",
+      department: department || "",
+      contact: contact || recipientPhoneNumber,
+    },
+  };
+
+  if (BOLNA_FROM_PHONE_NUMBER) {
+    payload.from_phone_number = BOLNA_FROM_PHONE_NUMBER;
+  }
+
+  const response = await fetch("https://api.bolna.ai/call", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${BOLNA_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const errorMessage =
+      data?.message || data?.error || "Bolna call request failed";
+    throw new Error(errorMessage);
+  }
+
+  return data;
 }
 
 function getByPath(source, pathExpression) {
@@ -256,10 +299,13 @@ app.get("/api/agent/config", (req, res) => {
   res.json({
     launchUrl: BOLNA_AGENT_URL,
     launchConfigured: Boolean(BOLNA_AGENT_URL),
+    apiCallConfigured: Boolean(BOLNA_API_KEY && BOLNA_AGENT_ID),
+    bolnaAgentId: BOLNA_AGENT_ID,
     webhookUrl: getWebhookUrl(req),
     webhookWhitelistIp: WEBHOOK_WHITELIST_IP,
     latestEvent: state.lastEvent,
     latestTicket: state.latestTicket,
+    latestCall: state.latestCall,
   });
 });
 
@@ -271,8 +317,56 @@ app.post("/api/agent/session", (req, res) => {
     webhookWhitelistIp: WEBHOOK_WHITELIST_IP,
     message: BOLNA_AGENT_URL
       ? "Bolna agent launch URL is configured. Open the agent and use the webhook below in the Bolna dashboard."
-      : "Set BOLNA_AGENT_URL in your environment if you want the Start Voice Support button to open your Bolna agent.",
+      : "No direct launch URL is configured. Use your Bolna dashboard to start the agent, and keep the webhook URL below in the agent settings.",
   });
+});
+
+app.post("/api/bolna/call", async (req, res) => {
+  const { recipient_phone_number, employee_name, department, contact } = req.body || {};
+
+  if (!recipient_phone_number) {
+    return res.status(400).json({
+      success: false,
+      error: "recipient_phone_number is required",
+    });
+  }
+
+  if (!BOLNA_API_KEY) {
+    return res.status(500).json({
+      success: false,
+      error: "BOLNA_API_KEY is not configured on the server",
+    });
+  }
+
+  try {
+    const callResponse = await startBolnaCall({
+      recipientPhoneNumber: recipient_phone_number,
+      employeeName: employee_name,
+      department,
+      contact,
+    });
+
+    state.latestCall = {
+      requested_at: new Date().toISOString(),
+      recipient_phone_number,
+      employee_name: employee_name || "",
+      execution_id: callResponse.execution_id || null,
+      status: callResponse.status || "queued",
+      provider_message: callResponse.message || "Call initiated",
+    };
+
+    return res.json({
+      success: true,
+      message: "Bolna call initiated successfully",
+      agent_id: BOLNA_AGENT_ID,
+      ...state.latestCall,
+    });
+  } catch (error) {
+    return res.status(502).json({
+      success: false,
+      error: error.message,
+    });
+  }
 });
 
 app.post("/api/bolna/webhook", (req, res) => {

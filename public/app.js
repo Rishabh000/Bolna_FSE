@@ -1,3 +1,4 @@
+const callForm = document.getElementById("call-form");
 const startAgentBtn = document.getElementById("start-agent-btn");
 const refreshTicketBtn = document.getElementById("refresh-ticket-btn");
 const agentStatus = document.getElementById("agent-status");
@@ -6,6 +7,8 @@ const ticketEmpty = document.getElementById("ticket-empty");
 const webhookUrlEl = document.getElementById("webhook-url");
 const whitelistIpEl = document.getElementById("whitelist-ip");
 const launchStateEl = document.getElementById("launch-state");
+const agentIdEl = document.getElementById("agent-id");
+const callApiStateEl = document.getElementById("call-api-state");
 
 let agentConfig = null;
 
@@ -42,9 +45,13 @@ async function loadAgentConfig() {
     agentConfig = data;
     webhookUrlEl.textContent = data.webhookUrl;
     whitelistIpEl.textContent = data.webhookWhitelistIp;
+    agentIdEl.textContent = data.bolnaAgentId || "Not configured";
+    callApiStateEl.textContent = data.apiCallConfigured
+      ? "Ready to initiate Bolna call from app"
+      : "Set BOLNA_API_KEY on the server to enable call initiation";
     launchStateEl.textContent = data.launchConfigured
       ? "Bolna launch URL configured"
-      : "Bolna launch URL not configured yet";
+      : "Using API-triggered calls instead of a launch URL";
 
     if (data.latestTicket) {
       populateTicket(data.latestTicket);
@@ -56,9 +63,50 @@ async function loadAgentConfig() {
   }
 }
 
-async function createAgentSession() {
-  agentStatus.textContent = "Checking Bolna agent launch configuration...";
+async function createAgentSession(event) {
+  event.preventDefault();
+  const recipientPhoneNumber = document.getElementById("phone-input").value.trim();
+  const employeeName = document.getElementById("employee-name-input").value.trim();
+  const department = document.getElementById("department-input").value.trim();
 
+  if (!recipientPhoneNumber) {
+    agentStatus.textContent = "Enter a phone number before starting the support call.";
+    return;
+  }
+
+  agentStatus.textContent = "Calling Bolna to start the IT support voice agent...";
+  startAgentBtn.disabled = true;
+
+  try {
+    const response = await fetch("/api/bolna/call", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        recipient_phone_number: recipientPhoneNumber,
+        employee_name: employeeName,
+        department,
+        contact: recipientPhoneNumber,
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Unable to start Bolna call");
+    }
+
+    await loadAgentConfig();
+    agentStatus.textContent =
+      `Call queued for ${data.recipient_phone_number}. Execution ID: ${data.execution_id || "pending"}. Once the conversation finishes, refresh this page or wait for the ticket to appear below.`;
+  } catch (error) {
+    agentStatus.textContent = error.message || "Unable to initialize the Bolna agent right now.";
+  } finally {
+    startAgentBtn.disabled = false;
+  }
+}
+
+async function showSetupInstructions() {
   try {
     const response = await fetch("/api/agent/session", {
       method: "POST",
@@ -67,18 +115,16 @@ async function createAgentSession() {
       },
       body: JSON.stringify({ source: "web-app" }),
     });
-
     const data = await response.json();
-    await loadAgentConfig();
 
     if (data.launchUrl) {
       window.open(data.launchUrl, "_blank", "noopener,noreferrer");
       agentStatus.textContent =
-        "Bolna agent opened in a new tab. After the call finishes, this app will show the latest webhook ticket.";
+        "Bolna launch URL opened in a new tab. Use the webhook URL shown on this page in the Bolna dashboard.";
       return;
     }
 
-    agentStatus.textContent = `${data.message} Webhook URL is shown on this page for your Bolna agent setup.`;
+    agentStatus.textContent = data.message;
   } catch (error) {
     agentStatus.textContent =
       "Unable to initialize the Bolna agent right now. Please check your environment variables and backend.";
@@ -105,7 +151,7 @@ async function refreshLatestTicket() {
   }
 }
 
-startAgentBtn.addEventListener("click", createAgentSession);
+callForm.addEventListener("submit", createAgentSession);
 refreshTicketBtn.addEventListener("click", refreshLatestTicket);
 
 loadAgentConfig().then(refreshLatestTicket);
