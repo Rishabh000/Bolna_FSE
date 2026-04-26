@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IT Helpdesk Voice Agent</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Source+Sans+3:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="hero">
+        <p class="eyebrow">Enterprise IT Support</p>
+        <h1>Voice-first helpdesk ticketing for internal teams.</h1>
+        <p class="hero-copy">
+          This web app lets an employee launch a Bolna voice support session,
+          capture structured incident details, and create a routed IT ticket in
+          one flow.
+        </p>
+
+        <div class="hero-actions">
+          <button id="start-agent-btn" class="primary-btn">Start Voice Support</button>
+          <button id="load-demo-btn" class="secondary-btn">Run Demo Ticket</button>
+        </div>
+
+        <div id="agent-status" class="status-card">
+          Agent idle. Start a voice support session to initialize the Bolna flow.
+        </div>
+      </section>
+
+      <section class="panel-grid">
+        <article class="panel">
+          <div class="panel-header">
+            <p class="panel-label">Workflow</p>
+            <h2>How the full assignment flow works</h2>
+          </div>
+          <ol class="flow-list">
+            <li>User opens the web app and starts the voice support session.</li>
+            <li>Bolna asks structured questions and gathers ticket details.</li>
+            <li>The agent sends JSON to the backend webhook.</li>
+            <li>The backend creates a ticket and assigns the right support team.</li>
+            <li>The web app displays the created ticket and resolution path.</li>
+          </ol>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <p class="panel-label">Integration</p>
+            <h2>Bolna connection point</h2>
+          </div>
+          <p class="muted">
+            The app already includes an API route for session initialization.
+            Replace the mock handler with your live Bolna API call when your
+            agent is ready.
+          </p>
+          <pre class="code-block">POST /api/agent/session
+POST /api/create-ticket</pre>
+        </article>
+      </section>
+
+      <section class="ticket-section">
+        <div class="panel-header">
+          <p class="panel-label">Ticket Output</p>
+          <h2>Created ticket response</h2>
+        </div>
+        <div id="ticket-empty" class="ticket-empty">
+          No ticket yet. Use the demo button or connect your Bolna agent to the
+          webhook.
+        </div>
+        <article id="ticket-card" class="ticket-card hidden">
+          <div class="ticket-top">
+            <div>
+              <p class="ticket-meta">Ticket ID</p>
+              <h3 id="ticket-id">IT-0000</h3>
+            </div>
+            <span id="ticket-priority" class="priority-badge">High</span>
+          </div>
+
+          <div class="ticket-grid">
+            <div>
+              <p class="ticket-meta">Employee</p>
+              <p id="employee-name"></p>
+            </div>
+            <div>
+              <p class="ticket-meta">Department</p>
+              <p id="department"></p>
+            </div>
+            <div>
+              <p class="ticket-meta">Issue Type</p>
+              <p id="issue-type"></p>
+            </div>
+            <div>
+              <p class="ticket-meta">Affected System</p>
+              <p id="affected-system"></p>
+            </div>
+            <div>
+              <p class="ticket-meta">Assigned Team</p>
+              <p id="assigned-team"></p>
+            </div>
+            <div>
+              <p class="ticket-meta">Status</p>
+              <p id="ticket-status"></p>
+            </div>
+          </div>
+
+          <div class="summary-block">
+            <p class="ticket-meta">Issue Summary</p>
+            <p id="issue-summary"></p>
+          </div>
+
+          <div class="summary-block">
+            <p class="ticket-meta">Troubleshooting Done</p>
+            <p id="troubleshooting"></p>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

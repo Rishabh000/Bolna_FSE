@@ -1,0 +1,21 @@
+{
+  "name": "it-helpdesk-voice-agent",
+  "version": "1.0.0",
+  "description": "Web app for an enterprise IT helpdesk voice agent powered by Bolna.",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "NODE_ENV=production node server.js"
+  },
+  "keywords": [
+    "bolna",
+    "voice-agent",
+    "helpdesk",
+    "express"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
