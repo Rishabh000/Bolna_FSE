@@ -17,60 +17,42 @@
       <section class="hero">
         <p class="eyebrow">Enterprise IT Support</p>
         <h1>Voice-first helpdesk ticketing for internal teams.</h1>
-        <p class="hero-copy">
-          This web app lets an employee launch a Bolna voice support session,
-          capture structured incident details, and create a routed IT ticket in
-          one flow.
-        </p>
+        
 
         <div class="hero-actions">
           <button id="start-agent-btn" class="primary-btn">Start Voice Support</button>
-          <button id="load-demo-btn" class="secondary-btn">Run Demo Ticket</button>
+          <button id="refresh-ticket-btn" class="secondary-btn">Refresh Ticket Status</button>
         </div>
 
         <div id="agent-status" class="status-card">
-          Agent idle. Start a voice support session to initialize the Bolna flow.
+          Latest ticket status.
         </div>
       </section>
 
-      <section class="panel-grid">
-        <article class="panel">
-          <div class="panel-header">
-            <p class="panel-label">Workflow</p>
-            <h2>How the full assignment flow works</h2>
-          </div>
-          <ol class="flow-list">
-            <li>User opens the web app and starts the voice support session.</li>
-            <li>Bolna asks structured questions and gathers ticket details.</li>
-            <li>The agent sends JSON to the backend webhook.</li>
-            <li>The backend creates a ticket and assigns the right support team.</li>
-            <li>The web app displays the created ticket and resolution path.</li>
-          </ol>
-        </article>
+  
 
         <article class="panel">
           <div class="panel-header">
-            <p class="panel-label">Integration</p>
-            <h2>Bolna connection point</h2>
+            <p class="panel-label">Workflow</p>
+            <h2>Real voice-to-ticket flow</h2>
           </div>
-          <p class="muted">
-            The app already includes an API route for session initialization.
-            Replace the mock handler with your live Bolna API call when your
-            agent is ready.
-          </p>
-          <pre class="code-block">POST /api/agent/session
-POST /api/create-ticket</pre>
+          <ol class="flow-list">
+            <li>User opens the web app and starts the Bolna voice support session.</li>
+            <li>Bolna collects structured issue details during the call.</li>
+            <li>Bolna posts execution data to your public webhook endpoint.</li>
+            <li>The backend converts the webhook payload into a routed IT ticket.</li>
+            <li>The web app refreshes and displays the latest created ticket.</li>
+          </ol>
         </article>
       </section>
 
       <section class="ticket-section">
         <div class="panel-header">
           <p class="panel-label">Ticket Output</p>
-          <h2>Created ticket response</h2>
+          <h2>Latest ticket received from Bolna</h2>
         </div>
         <div id="ticket-empty" class="ticket-empty">
-          No ticket yet. Use the demo button or connect your Bolna agent to the
-          webhook.
+          Waiting for a real Bolna webhook event. Complete a call in Bolna and this ticket panel will update.
         </div>
         <article id="ticket-card" class="ticket-card hidden">
           <div class="ticket-top">

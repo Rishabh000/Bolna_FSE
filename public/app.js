@@ -1,31 +1,13 @@
 const startAgentBtn = document.getElementById("start-agent-btn");
-const loadDemoBtn = document.getElementById("load-demo-btn");
+const refreshTicketBtn = document.getElementById("refresh-ticket-btn");
 const agentStatus = document.getElementById("agent-status");
 const ticketCard = document.getElementById("ticket-card");
 const ticketEmpty = document.getElementById("ticket-empty");
+const webhookUrlEl = document.getElementById("webhook-url");
+const whitelistIpEl = document.getElementById("whitelist-ip");
+const launchStateEl = document.getElementById("launch-state");
 
-async function createAgentSession() {
-  agentStatus.textContent = "Initializing Bolna session...";
-
-  try {
-    const response = await fetch("/api/agent/session", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        source: "web-app",
-      }),
-    });
-
-    const data = await response.json();
-
-    agentStatus.textContent = `${data.message} Agent ID: ${data.bolnaAgentId}.`;
-  } catch (error) {
-    agentStatus.textContent =
-      "Unable to initialize the Bolna session right now. Please check your backend integration.";
-  }
-}
+let agentConfig = null;
 
 function populateTicket(ticketResponse) {
   const { ticket_id, status, priority, assigned_team, ticket } = ticketResponse;
@@ -46,32 +28,85 @@ function populateTicket(ticketResponse) {
     ticket.troubleshooting_done || "No troubleshooting steps provided.";
 }
 
-async function runDemoTicketFlow() {
-  agentStatus.textContent =
-    "Running demo flow: simulated Bolna agent data is being sent to the helpdesk webhook.";
+function renderEmptyState(message) {
+  ticketCard.classList.add("hidden");
+  ticketEmpty.classList.remove("hidden");
+  ticketEmpty.textContent = message;
+}
+
+async function loadAgentConfig() {
+  try {
+    const response = await fetch("/api/agent/config");
+    const data = await response.json();
+
+    agentConfig = data;
+    webhookUrlEl.textContent = data.webhookUrl;
+    whitelistIpEl.textContent = data.webhookWhitelistIp;
+    launchStateEl.textContent = data.launchConfigured
+      ? "Bolna launch URL configured"
+      : "Bolna launch URL not configured yet";
+
+    if (data.latestTicket) {
+      populateTicket(data.latestTicket);
+      agentStatus.textContent = "Latest Bolna ticket received and displayed below.";
+    }
+  } catch (error) {
+    agentStatus.textContent =
+      "Unable to load Bolna configuration. Check your backend and refresh the page.";
+  }
+}
+
+async function createAgentSession() {
+  agentStatus.textContent = "Checking Bolna agent launch configuration...";
 
   try {
-    const demoResponse = await fetch("/api/demo-ticket");
-    const demoTicket = await demoResponse.json();
-
-    const ticketResponse = await fetch("/api/create-ticket", {
+    const response = await fetch("/api/agent/session", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(demoTicket),
+      body: JSON.stringify({ source: "web-app" }),
     });
 
-    const createdTicket = await ticketResponse.json();
-    populateTicket(createdTicket);
+    const data = await response.json();
+    await loadAgentConfig();
 
-    agentStatus.textContent =
-      "Demo completed. In the live version, your Bolna agent will send this same payload after the voice conversation.";
+    if (data.launchUrl) {
+      window.open(data.launchUrl, "_blank", "noopener,noreferrer");
+      agentStatus.textContent =
+        "Bolna agent opened in a new tab. After the call finishes, this app will show the latest webhook ticket.";
+      return;
+    }
+
+    agentStatus.textContent = `${data.message} Webhook URL is shown on this page for your Bolna agent setup.`;
   } catch (error) {
     agentStatus.textContent =
-      "Demo flow failed. Please check the backend routes and try again.";
+      "Unable to initialize the Bolna agent right now. Please check your environment variables and backend.";
+  }
+}
+
+async function refreshLatestTicket() {
+  try {
+    const response = await fetch("/api/tickets/latest", { cache: "no-store" });
+
+    if (!response.ok) {
+      renderEmptyState(
+        "Waiting for a real Bolna webhook event. Complete a call in Bolna and this ticket panel will update."
+      );
+      return;
+    }
+
+    const latestTicket = await response.json();
+    populateTicket(latestTicket);
+    agentStatus.textContent = "Latest ticket pulled from the Bolna webhook successfully.";
+  } catch (error) {
+    agentStatus.textContent =
+      "Unable to refresh the latest ticket. Please verify your deployed webhook is reachable.";
   }
 }
 
 startAgentBtn.addEventListener("click", createAgentSession);
-loadDemoBtn.addEventListener("click", runDemoTicketFlow);
+refreshTicketBtn.addEventListener("click", refreshLatestTicket);
+
+loadAgentConfig().then(refreshLatestTicket);
+window.setInterval(refreshLatestTicket, 8000);

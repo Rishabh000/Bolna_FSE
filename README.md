@@ -1,16 +1,19 @@
 # IT Helpdesk Voice Agent Web App
 
-This project is a lightweight web app for an enterprise IT helpdesk voice agent assignment. It is designed to demonstrate the full workflow:
+This project is a webhook-driven web app for an enterprise IT helpdesk voice agent built around Bolna.
 
-User -> Web App -> Bolna Agent -> Backend Logic -> Ticket Output
+It demonstrates the full workflow:
 
-## What the app includes
+User -> Web App -> Bolna Agent -> Webhook -> Backend Logic -> Ticket Output
 
-- A landing page for launching the voice support flow
-- A mock `Bolna session` API route
-- A `create-ticket` webhook endpoint
-- Simple routing logic for priority and team assignment
-- A demo button that simulates the full end-to-end flow
+## What the app does
+
+- Shows the webhook URL that must be configured inside your Bolna agent
+- Displays the Bolna webhook IP that should be whitelisted on your server
+- Opens your Bolna agent launch URL from the app when configured
+- Receives real execution data from Bolna at `POST /api/bolna/webhook`
+- Converts the webhook payload into a routed IT support ticket
+- Displays the latest ticket in the dashboard
 
 ## Project structure
 
@@ -21,6 +24,8 @@ User -> Web App -> Bolna Agent -> Backend Logic -> Ticket Output
 │   ├── index.html
 │   └── styles.css
 ├── .env.example
+├── .gitignore
+├── package-lock.json
 ├── package.json
 ├── README.md
 └── server.js
@@ -30,41 +35,41 @@ User -> Web App -> Bolna Agent -> Backend Logic -> Ticket Output
 
 ```bash
 npm install
+cp .env.example .env
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Open `http://127.0.0.1:3000`
 
-## Bolna integration
+## Environment variables
 
-Right now, `POST /api/agent/session` returns a mock response. To make this production-ready for your demo:
+- `HOST`: local bind host for Express
+- `PORT`: local port for Express
+- `PUBLIC_BASE_URL`: your deployed public domain so the UI shows the correct webhook URL
+- `BOLNA_AGENT_URL`: optional launch URL for your Bolna agent
 
-1. Replace the mock response in `server.js`
-2. Call the real Bolna session or conversation start API
-3. Return the call/session details your frontend needs
-4. Configure Bolna to send the collected ticket data to `POST /api/create-ticket`
+## Bolna setup
 
-## Webhook payload expected from Bolna
+1. Open your agent in Bolna.
+2. In the **Push all execution data to webhook** section, paste the webhook URL shown in this app.
+3. Save the agent.
+4. Whitelist this IP on your server: `13.203.39.153`
+5. Complete a voice support conversation.
+6. Refresh the app and view the latest created ticket.
 
-```json
-{
-  "employee_name": "Riya Sharma",
-  "department": "Finance",
-  "contact": "riya@company.com",
-  "issue_summary": "Unable to connect to company VPN since morning",
-  "issue_type": "VPN",
-  "affected_system": "Windows laptop",
-  "issue_start_time": "Today at 9:00 AM",
-  "work_blocked": "Fully blocked",
-  "troubleshooting_done": "Restarted laptop and retried VPN login",
-  "severity": "High"
-}
-```
+## Webhook endpoint
 
-## Suggested demo script
+The backend receives Bolna updates at:
 
-1. Open the app
-2. Explain that the employee clicks `Start Voice Support`
-3. Show that the Bolna agent collects issue details by voice
-4. Trigger the webhook with the structured data
-5. Display the created ticket on the dashboard
+`POST /api/bolna/webhook`
+
+The app tries to extract ticket fields from common payload shapes such as:
+
+- top-level fields
+- `data.*`
+- `payload.*`
+- `execution_data.*`
+- `variables.*`
+- `collected_data.*`
+- `extracted_variables.*`
+- `ticket.*`

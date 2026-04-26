@@ -4,8 +4,11 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "127.0.0.1";
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+const BOLNA_AGENT_URL = process.env.BOLNA_AGENT_URL || "";
+const WEBHOOK_WHITELIST_IP = "13.203.39.153";
 
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 const routingMap = {
@@ -18,6 +21,16 @@ const routingMap = {
   "Access Request": "Identity Support",
   Other: "General IT Queue",
 };
+
+const state = {
+  lastEvent: null,
+  latestTicket: null,
+  ticketRegistry: new Map(),
+};
+
+function buildTicketId() {
+  return `IT-${Math.floor(1000 + Math.random() * 9000)}`;
+}
 
 function normalizeSeverity(issueType, workBlocked, providedSeverity) {
   if (providedSeverity) return providedSeverity;
@@ -34,81 +47,276 @@ function normalizeSeverity(issueType, workBlocked, providedSeverity) {
   return "Low";
 }
 
-function buildTicketId() {
-  return `IT-${Math.floor(1000 + Math.random() * 9000)}`;
+function getWebhookUrl(req) {
+  if (PUBLIC_BASE_URL) {
+    return `${PUBLIC_BASE_URL}/api/bolna/webhook`;
+  }
+
+  return `${req.protocol}://${req.get("host")}/api/bolna/webhook`;
 }
 
-app.post("/api/agent/session", (req, res) => {
-  const bolnaAgentId = process.env.BOLNA_AGENT_ID || "demo-agent";
+function getByPath(source, pathExpression) {
+  return pathExpression.split(".").reduce((value, key) => {
+    if (value && typeof value === "object" && key in value) {
+      return value[key];
+    }
 
+    return undefined;
+  }, source);
+}
+
+function pickFirst(source, candidates) {
+  for (const candidate of candidates) {
+    const value = getByPath(source, candidate);
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return value;
+    }
+  }
+
+  return "";
+}
+
+function collectTicketFields(payload) {
+  return {
+    employee_name: pickFirst(payload, [
+      "employee_name",
+      "employeeName",
+      "data.employee_name",
+      "data.employeeName",
+      "payload.employee_name",
+      "payload.employeeName",
+      "execution_data.employee_name",
+      "execution_data.employeeName",
+      "variables.employee_name",
+      "variables.employeeName",
+      "collected_data.employee_name",
+      "collected_data.employeeName",
+      "extracted_variables.employee_name",
+      "extracted_variables.employeeName",
+      "ticket.employee_name",
+      "ticket.employeeName",
+    ]),
+    department: pickFirst(payload, [
+      "department",
+      "data.department",
+      "payload.department",
+      "execution_data.department",
+      "variables.department",
+      "collected_data.department",
+      "extracted_variables.department",
+      "ticket.department",
+    ]),
+    contact: pickFirst(payload, [
+      "contact",
+      "contact_detail",
+      "contactDetail",
+      "data.contact",
+      "data.contact_detail",
+      "payload.contact",
+      "execution_data.contact",
+      "variables.contact",
+      "collected_data.contact",
+      "extracted_variables.contact",
+      "ticket.contact",
+      "ticket.contact_detail",
+    ]),
+    issue_summary: pickFirst(payload, [
+      "issue_summary",
+      "issueSummary",
+      "summary",
+      "data.issue_summary",
+      "payload.issue_summary",
+      "execution_data.issue_summary",
+      "variables.issue_summary",
+      "collected_data.issue_summary",
+      "extracted_variables.issue_summary",
+      "ticket.issue_summary",
+      "ticket.issueSummary",
+    ]),
+    issue_type: pickFirst(payload, [
+      "issue_type",
+      "issueType",
+      "category",
+      "data.issue_type",
+      "payload.issue_type",
+      "execution_data.issue_type",
+      "variables.issue_type",
+      "collected_data.issue_type",
+      "extracted_variables.issue_type",
+      "ticket.issue_type",
+      "ticket.issueType",
+    ]) || "Other",
+    affected_system: pickFirst(payload, [
+      "affected_system",
+      "affectedSystem",
+      "device",
+      "data.affected_system",
+      "payload.affected_system",
+      "execution_data.affected_system",
+      "variables.affected_system",
+      "collected_data.affected_system",
+      "extracted_variables.affected_system",
+      "ticket.affected_system",
+      "ticket.affectedSystem",
+    ]),
+    issue_start_time: pickFirst(payload, [
+      "issue_start_time",
+      "issueStartTime",
+      "started_at",
+      "data.issue_start_time",
+      "payload.issue_start_time",
+      "execution_data.issue_start_time",
+      "variables.issue_start_time",
+      "collected_data.issue_start_time",
+      "extracted_variables.issue_start_time",
+      "ticket.issue_start_time",
+      "ticket.issueStartTime",
+    ]),
+    work_blocked: pickFirst(payload, [
+      "work_blocked",
+      "workBlocked",
+      "blocked",
+      "data.work_blocked",
+      "payload.work_blocked",
+      "execution_data.work_blocked",
+      "variables.work_blocked",
+      "collected_data.work_blocked",
+      "extracted_variables.work_blocked",
+      "ticket.work_blocked",
+      "ticket.workBlocked",
+    ]),
+    troubleshooting_done: pickFirst(payload, [
+      "troubleshooting_done",
+      "troubleshootingDone",
+      "troubleshooting",
+      "data.troubleshooting_done",
+      "payload.troubleshooting_done",
+      "execution_data.troubleshooting_done",
+      "variables.troubleshooting_done",
+      "collected_data.troubleshooting_done",
+      "extracted_variables.troubleshooting_done",
+      "ticket.troubleshooting_done",
+      "ticket.troubleshootingDone",
+    ]),
+    severity: pickFirst(payload, [
+      "severity",
+      "priority",
+      "data.severity",
+      "payload.severity",
+      "execution_data.severity",
+      "variables.severity",
+      "collected_data.severity",
+      "extracted_variables.severity",
+      "ticket.severity",
+    ]),
+  };
+}
+
+function getConversationKey(payload) {
+  return pickFirst(payload, [
+    "call_id",
+    "callId",
+    "conversation_id",
+    "conversationId",
+    "execution_id",
+    "executionId",
+    "data.call_id",
+    "data.conversation_id",
+    "payload.call_id",
+    "payload.conversation_id",
+  ]);
+}
+
+function buildTicketFromPayload(payload, existingTicket) {
+  const ticket = collectTicketFields(payload);
+  if (!ticket.issue_summary) {
+    return null;
+  }
+
+  const normalizedSeverity = normalizeSeverity(
+    ticket.issue_type,
+    ticket.work_blocked,
+    ticket.severity
+  );
+
+  return {
+    ticket_id: existingTicket?.ticket_id || buildTicketId(),
+    status: "Created",
+    priority: normalizedSeverity,
+    assigned_team: routingMap[ticket.issue_type] || routingMap.Other,
+    created_at: existingTicket?.created_at || new Date().toISOString(),
+    ticket: {
+      ...ticket,
+      severity: normalizedSeverity,
+    },
+  };
+}
+
+app.get("/api/agent/config", (req, res) => {
   res.json({
-    success: true,
-    message: "Session initialized. Replace this mock response with your real Bolna session API call.",
-    bolnaAgentId,
-    launchMode: "mock",
-    nextStep:
-      "Connect this route to the Bolna session creation endpoint and return the real call/session details here.",
+    launchUrl: BOLNA_AGENT_URL,
+    launchConfigured: Boolean(BOLNA_AGENT_URL),
+    webhookUrl: getWebhookUrl(req),
+    webhookWhitelistIp: WEBHOOK_WHITELIST_IP,
+    latestEvent: state.lastEvent,
+    latestTicket: state.latestTicket,
   });
 });
 
-app.post("/api/create-ticket", (req, res) => {
-  const {
-    employee_name,
-    department,
-    contact,
-    issue_summary,
-    issue_type,
-    affected_system,
-    issue_start_time,
-    work_blocked,
-    troubleshooting_done,
-    severity,
-  } = req.body;
+app.post("/api/agent/session", (req, res) => {
+  res.json({
+    success: true,
+    launchUrl: BOLNA_AGENT_URL,
+    webhookUrl: getWebhookUrl(req),
+    webhookWhitelistIp: WEBHOOK_WHITELIST_IP,
+    message: BOLNA_AGENT_URL
+      ? "Bolna agent launch URL is configured. Open the agent and use the webhook below in the Bolna dashboard."
+      : "Set BOLNA_AGENT_URL in your environment if you want the Start Voice Support button to open your Bolna agent.",
+  });
+});
 
-  if (!employee_name || !issue_summary || !issue_type) {
-    return res.status(400).json({
+app.post("/api/bolna/webhook", (req, res) => {
+  const payload = req.body || {};
+  const status = pickFirst(payload, ["status", "event", "call_status", "data.status"]) || "received";
+  const conversationKey = getConversationKey(payload);
+  const existingTicket = conversationKey ? state.ticketRegistry.get(conversationKey) : null;
+  const candidateTicket = buildTicketFromPayload(payload, existingTicket);
+
+  state.lastEvent = {
+    status,
+    received_at: new Date().toISOString(),
+    ticket_created: Boolean(candidateTicket),
+    conversation_key: conversationKey || null,
+  };
+
+  if (candidateTicket) {
+    state.latestTicket = candidateTicket;
+    if (conversationKey) {
+      state.ticketRegistry.set(conversationKey, candidateTicket);
+    }
+  }
+
+  res.json({
+    success: true,
+    received: true,
+    ticket_created: Boolean(candidateTicket),
+    ticket_id: candidateTicket ? candidateTicket.ticket_id : null,
+  });
+});
+
+app.get("/api/tickets/latest", (_req, res) => {
+  if (!state.latestTicket) {
+    return res.status(404).json({
       success: false,
-      error: "employee_name, issue_summary, and issue_type are required",
+      error: "No ticket received from Bolna yet",
+      latestEvent: state.lastEvent,
     });
   }
 
-  const normalizedSeverity = normalizeSeverity(issue_type, work_blocked, severity);
-  const assignedTeam = routingMap[issue_type] || routingMap.Other;
-
   return res.json({
     success: true,
-    ticket_id: buildTicketId(),
-    status: "Created",
-    priority: normalizedSeverity,
-    assigned_team: assignedTeam,
-    created_at: new Date().toISOString(),
-    ticket: {
-      employee_name,
-      department,
-      contact,
-      issue_summary,
-      issue_type,
-      affected_system,
-      issue_start_time,
-      work_blocked,
-      troubleshooting_done,
-      severity: normalizedSeverity,
-    },
-  });
-});
-
-app.get("/api/demo-ticket", (_req, res) => {
-  res.json({
-    employee_name: "Riya Sharma",
-    department: "Finance",
-    contact: "riya@company.com",
-    issue_summary: "Unable to connect to company VPN since morning.",
-    issue_type: "VPN",
-    affected_system: "Windows laptop",
-    issue_start_time: "Today at 9:00 AM",
-    work_blocked: "Fully blocked",
-    troubleshooting_done: "Restarted laptop and retried VPN login",
-    severity: "High",
+    latestEvent: state.lastEvent,
+    ...state.latestTicket,
   });
 });
 
